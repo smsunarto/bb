@@ -179,6 +179,7 @@ function makeInventory(overrides: Partial<UpdateInventory>): UpdateInventory {
   return {
     isLoading: false,
     systemVersion: {
+      build: null,
       currentVersion: "0.0.5",
       latestVersion: "0.0.5",
       source: "npm",
@@ -368,6 +369,7 @@ describe("UpdatesSettingsSection", () => {
       isDesktop: false,
     });
     const availableVersion = {
+      build: null,
       currentVersion: "0.0.5",
       latestVersion: "0.0.6",
       source: "npm" as const,

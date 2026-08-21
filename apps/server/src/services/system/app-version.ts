@@ -1,8 +1,15 @@
+import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
+import { promisify } from "node:util";
 import semver from "semver";
 import { z } from "zod";
-import type { SystemVersionResponse } from "@bb/server-contract";
+import type {
+  SystemBuildIdentity,
+  SystemVersionResponse,
+} from "@bb/server-contract";
 import type { ServerLogger, ServerRuntimeConfig } from "../../types.js";
 
+const execFileAsync = promisify(execFile);
 const NPM_LATEST_URL = "https://registry.npmjs.org/bb-app/latest";
 const NPM_LATEST_TIMEOUT_MS = 5_000;
 const NPM_LATEST_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -28,6 +35,8 @@ export interface CreateAppVersionServiceArgs {
   config: Pick<ServerRuntimeConfig, "appVersion" | "isDevelopment">;
   fetchImpl?: typeof fetch;
   logger: ServerLogger;
+  /** Repository root when the server is running from a source checkout. */
+  sourceCheckoutRoot?: string;
   /** Override the cache TTL. Tests use this; production uses the default. */
   cacheTtlMs?: number;
   /** Inject a custom clock for cache invalidation tests. */
@@ -39,6 +48,71 @@ interface NpmLatestCacheEntry {
   latestVersion: string;
 }
 
+async function runGit(args: readonly string[], cwd: string): Promise<string> {
+  const result = await execFileAsync("git", [...args], {
+    cwd,
+    maxBuffer: 1024 * 1024,
+  });
+  return result.stdout;
+}
+
+/**
+ * Reads build identity directly from git so branch switches, new commits, and
+ * tracked-file edits are visible without restarting the server. The root check
+ * prevents an installed package inside somebody else's repository from
+ * inheriting that unrelated checkout's identity.
+ */
+export async function resolveGitBuildIdentity(
+  sourceCheckoutRoot: string,
+): Promise<SystemBuildIdentity | null> {
+  try {
+    const [expectedRoot, reportedRoot] = await Promise.all([
+      realpath(sourceCheckoutRoot),
+      runGit(["rev-parse", "--show-toplevel"], sourceCheckoutRoot).then(
+        (stdout) => realpath(stdout.trim()),
+      ),
+    ]);
+    if (reportedRoot !== expectedRoot) {
+      return null;
+    }
+
+    const status = await runGit(
+      [
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "--untracked-files=no",
+        "--ignore-submodules=untracked",
+      ],
+      expectedRoot,
+    );
+    const lines = status.split(/\r?\n/u).filter((line) => line.length > 0);
+    const oidPrefix = "# branch.oid ";
+    const headPrefix = "# branch.head ";
+    const oidLine = lines.find((line) => line.startsWith(oidPrefix));
+    const headLine = lines.find((line) => line.startsWith(headPrefix));
+    const commit = oidLine?.slice(oidPrefix.length);
+    const rawBranch = headLine?.slice(headPrefix.length);
+    if (
+      commit === undefined ||
+      !/^[0-9a-f]{40}$/u.test(commit) ||
+      rawBranch === undefined ||
+      rawBranch.length === 0
+    ) {
+      return null;
+    }
+
+    return {
+      branch: rawBranch === "(detached)" ? "HEAD" : rawBranch,
+      commit,
+      shortCommit: commit.slice(0, 7),
+      dirty: lines.some((line) => !line.startsWith("# ")),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function createAppVersionService(
   args: CreateAppVersionServiceArgs,
 ): AppVersionService {
@@ -47,6 +121,7 @@ export function createAppVersionService(
   const now = args.now ?? (() => Date.now());
   const logger = args.logger;
   const config = args.config;
+  const sourceCheckoutRoot = args.sourceCheckoutRoot;
 
   let cache: NpmLatestCacheEntry | null = null;
   let inflight: Promise<string | null> | null = null;
@@ -132,6 +207,10 @@ export function createAppVersionService(
       args: AppVersionGetSystemVersionArgs = {},
     ): Promise<SystemVersionResponse> {
       const baseResponse: SystemVersionResponse = {
+        build:
+          sourceCheckoutRoot === undefined
+            ? null
+            : await resolveGitBuildIdentity(sourceCheckoutRoot),
         currentVersion: config.appVersion,
         latestVersion: null,
         source: "npm",

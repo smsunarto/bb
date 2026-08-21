@@ -60,6 +60,7 @@ interface QueryOptions {
 const SYSTEM_EXECUTION_OPTIONS_RETRY_DELAY_MS = 250;
 const SYSTEM_EXECUTION_OPTIONS_RETRY_COUNT = 1;
 const CLAUDE_CODE_PROVIDER_ID = "claude-code";
+const SOURCE_BUILD_POLL_INTERVAL_MS = 5_000;
 
 // Claude's account-scoped model probe spawns a CLI process on the host, so
 // waiting for it leaves the composer with no model list for seconds. Render a
@@ -193,6 +194,13 @@ export function useSystemVersion(options?: QueryOptions) {
     queryFn: ({ signal }) => sdk.system.version({ signal }),
     enabled: options?.enabled ?? true,
     ...SERVER_SESSION_QUERY_POLICY,
+    refetchInterval: (query) => {
+      const version = query.state.data;
+      return version !== undefined &&
+        (version.isDevelopment || version.build !== null)
+        ? SOURCE_BUILD_POLL_INTERVAL_MS
+        : false;
+    },
   });
 }
 

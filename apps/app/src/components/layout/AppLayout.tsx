@@ -92,7 +92,14 @@ import { applyThreadOpenToLayout } from "@/views/thread-detail/splitThreadNaviga
 import { useThreadSplitsEnabled } from "@/hooks/useThreadSplitsEnabled";
 import { useSplitWorkspaceActive } from "@/hooks/useSplitWorkspaceActive";
 import { useAppSettingsRouteMemory } from "@/hooks/useAppSettingsRouteMemory";
-import { useSystemConfig } from "@/hooks/queries/system-queries";
+import {
+  useSystemConfig,
+  useSystemVersion,
+} from "@/hooks/queries/system-queries";
+import {
+  formatBuildDomIdentity,
+  formatBuildIdentity,
+} from "@/lib/build-identity";
 
 const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
 const SIDEBAR_OPEN_KEY = "bb.sidebar.open";
@@ -503,6 +510,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isGlobalSettingsView =
     matchPath(`${SETTINGS_ROUTE_PATH}/*`, location.pathname) !== null;
   const systemConfigQuery = useSystemConfig();
+  const systemVersionQuery = useSystemVersion();
+  const build = systemVersionQuery.data?.build ?? null;
   const toolsHubEnabled = systemConfigQuery.data?.experiments.toolsHub === true;
   const isGlobalToolsView =
     toolsHubEnabled && isToolsRoutePath(location.pathname);
@@ -810,8 +819,23 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    document.title = documentTitle;
-  }, [documentTitle]);
+    document.title =
+      desktopInfo !== null && build !== null
+        ? `${documentTitle} — ${formatBuildIdentity(build)}`
+        : documentTitle;
+  }, [build, desktopInfo, documentTitle]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (build === null) {
+      delete document.documentElement.dataset.bbBuild;
+    } else {
+      document.documentElement.dataset.bbBuild = formatBuildDomIdentity(build);
+    }
+    return () => {
+      delete document.documentElement.dataset.bbBuild;
+    };
+  }, [build]);
 
   return (
     <ToolsHubExperimentProvider enabled={toolsHubEnabled}>
@@ -839,6 +863,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 />
               ) : (
                 <AppSidebar
+                  build={build}
                   onResizeMouseDown={handleResizeMouseDown}
                   isResizing={isSidebarResizing}
                   showTopReserve={true}

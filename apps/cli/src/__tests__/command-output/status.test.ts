@@ -26,6 +26,31 @@ describe("bb status command output", () => {
     expect(lines).toContain("Thread: thread-1");
   });
 
+  it("bb status prints the running source checkout identity", async () => {
+    stubServerApi({
+      "v1.system.version.$get": async () => ({
+        build: {
+          branch: "feat/example",
+          commit: "e6f422ef5c1a9d3b7f0e2a4c8d1b6e9f3a5c7d20",
+          shortCommit: "e6f422e",
+          dirty: true,
+        },
+        currentVersion: "0.0.5",
+        latestVersion: null,
+        source: "npm",
+        updateAvailable: false,
+        isDevelopment: true,
+        upgradeCommand: "npx bb-app@latest",
+      }),
+    });
+
+    await runCommand(["status"], register);
+
+    expect(collectLogLines(vi.mocked(console.log))).toContain(
+      "Build: feat/example@e6f422e (dirty)",
+    );
+  });
+
   it("bb status prints environment without fetching hosts", async () => {
     vi.stubEnv("BB_PROJECT_ID", "proj-1");
     vi.stubEnv("BB_THREAD_ID", "thread-1");

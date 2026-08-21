@@ -10,6 +10,7 @@ import { initDb } from "./db.js";
 import { createApp } from "./server.js";
 import { PendingInteractionLifecycle } from "./services/interactions/pending-interactions.js";
 import { createMachineAuthService } from "./services/machine-auth.js";
+import { resolveBbAppPackage } from "./services/install/bb-app-artifact.js";
 import { resolveBuiltinSkillsRootPath } from "./services/skills/builtin-skills-copy.js";
 import { SkillTreeRegistry } from "./services/skills/injected-skills.js";
 import { createAppVersionService } from "./services/system/app-version.js";
@@ -63,6 +64,13 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
   const appDir = resolve(selfDir, "../../app");
   const appDistDir = join(appDir, "dist");
   const isProduction = process.env.NODE_ENV === "production";
+  const sourceCheckoutRoot = await resolveBbAppPackage(import.meta.url)
+    .then((resolvedPackage) =>
+      resolvedPackage.layout === "repo"
+        ? resolve(resolvedPackage.root, "../..")
+        : undefined,
+    )
+    .catch(() => undefined);
   const staticDir =
     isProduction && existsSync(appDistDir) ? appDistDir : undefined;
   const runtimeConfig: ServerRuntimeConfig = {
@@ -135,6 +143,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
   const appVersion = createAppVersionService({
     config: runtimeConfig,
     logger,
+    sourceCheckoutRoot,
   });
   const { app, closeWebSockets, injectWebSocket, pluginService } = createApp(
     {

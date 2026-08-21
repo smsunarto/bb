@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { SystemBuildIdentity } from "@bb/server-contract";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { THREAD_JUMP_APP_COMMAND_IDS } from "@bb/domain";
 import { Link, useNavigate } from "react-router-dom";
@@ -22,6 +23,7 @@ import { useThreadListProvider } from "./threadListProvider";
 import { PluginNavSidebarItems } from "@/components/plugin/PluginNavSidebarItems";
 import { PluginSidebarFooterActions } from "@/components/plugin/PluginSidebarFooterActions";
 import { SidebarUpdatesBadge } from "./SidebarUpdatesBadge";
+import { SidebarBuildIdentity } from "./SidebarBuildIdentity";
 import { SidebarHistoryNavigationControls } from "./SidebarHistoryNavigationControls";
 import { useQuickCreateProjectController } from "@/hooks/useQuickCreateProject";
 import {
@@ -63,6 +65,7 @@ const SIDEBAR_FOOTER_ACTION_CLASS = cn(
 );
 
 interface AppSidebarProps {
+  build: SystemBuildIdentity | null;
   onResizeMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   isResizing: boolean;
   showTopReserve: boolean;
@@ -71,6 +74,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({
+  build,
   onResizeMouseDown,
   isResizing,
   showTopReserve,
@@ -367,7 +371,11 @@ export function AppSidebar({
                 <span className="sr-only">Report a bug</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
-            <li aria-hidden="true" className="min-w-0 flex-1" />
+            {build === null ? (
+              <li aria-hidden="true" className="min-w-0 flex-1" />
+            ) : (
+              <SidebarBuildIdentity build={build} />
+            )}
             <SidebarUpdatesBadge onNavigate={closeOnMobile} />
           </SidebarMenu>
         </SidebarFooter>

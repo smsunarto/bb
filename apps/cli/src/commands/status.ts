@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import type { ThreadTimelinePendingTodos } from "@bb/domain";
+import type { SystemBuildIdentity } from "@bb/server-contract";
 import { action } from "../action.js";
 import {
   resolveContextSnapshot,
@@ -15,6 +16,7 @@ import {
 import { printPendingTodos } from "./thread/pending-todos.js";
 
 interface StatusPayload {
+  build: SystemBuildIdentity | null;
   dataDir: string | null;
   project: { id: string; name: string } | null;
   thread: {
@@ -54,6 +56,7 @@ export function registerStatusCommand(
         const context = getContext();
 
         const payload: StatusPayload = {
+          build: null,
           dataDir: null,
           project: null,
           thread: null,
@@ -62,25 +65,39 @@ export function registerStatusCommand(
         };
 
         let serverAvailable = false;
+        const sdk = createCliBbSdk(getUrl());
 
-        // Best-effort: the data dir comes from system config (where theme/,
-        // plugins, and the DB live). Works without any project/thread context.
-        try {
-          const response = await cliFetch(`${getUrl()}/api/v1/system/config`);
-          if (response.ok) {
-            const config = (await response.json()) as { dataDir?: unknown };
-            if (typeof config.dataDir === "string") {
+        // Best-effort system metadata works without project/thread context.
+        // Fetch both endpoints together so an unreachable server does not
+        // serialize two waits in the common no-context path.
+        await Promise.all([
+          (async () => {
+            try {
+              const response = await cliFetch(
+                `${getUrl()}/api/v1/system/config`,
+              );
+              if (!response.ok) return;
+              const config = (await response.json()) as { dataDir?: unknown };
+              if (typeof config.dataDir !== "string") return;
               payload.dataDir = config.dataDir;
               serverAvailable = true;
+            } catch {
+              // Server unreachable — leave dataDir null.
             }
-          }
-        } catch {
-          // Server unreachable — leave dataDir null.
-        }
+          })(),
+          (async () => {
+            try {
+              const version = await sdk.system.version();
+              payload.build = version.build ?? null;
+              serverAvailable = true;
+            } catch {
+              // Older or unreachable server — leave build null.
+            }
+          })(),
+        ]);
 
         // Try to fetch enriched data from the server
         if (context.projectId || context.threadId) {
-          const sdk = createCliBbSdk(getUrl());
           const status = await sdk.status.get({
             projectId: context.projectId,
             threadId: context.threadId,
@@ -177,6 +194,15 @@ export function registerStatusCommand(
         if (payload.dataDir) {
           console.log("");
           console.log(`Data dir: ${payload.dataDir}`);
+        }
+
+        if (payload.build) {
+          console.log("");
+          console.log(
+            `Build: ${payload.build.branch}@${payload.build.shortCommit}${
+              payload.build.dirty ? " (dirty)" : ""
+            }`,
+          );
         }
 
         if (!context.projectId && !context.threadId) {

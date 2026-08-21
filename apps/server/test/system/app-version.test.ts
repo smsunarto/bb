@@ -1,6 +1,41 @@
+import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import { createAppVersionService } from "../../src/services/system/app-version.js";
+import {
+  createAppVersionService,
+  resolveGitBuildIdentity,
+} from "../../src/services/system/app-version.js";
 import { testLogger } from "../helpers/test-app.js";
+
+const execFileAsync = promisify(execFile);
+
+interface GitFixture {
+  commit: string;
+  root: string;
+}
+
+async function createGitFixture(): Promise<GitFixture> {
+  const root = await mkdtemp(join(tmpdir(), "bb-app-version-"));
+  await execFileAsync("git", ["init", "--initial-branch=feat/example"], {
+    cwd: root,
+  });
+  await execFileAsync("git", ["config", "user.email", "bb@example.test"], {
+    cwd: root,
+  });
+  await execFileAsync("git", ["config", "user.name", "bb test"], {
+    cwd: root,
+  });
+  await writeFile(join(root, "tracked.txt"), "initial\n");
+  await execFileAsync("git", ["add", "tracked.txt"], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
+  const commit = (
+    await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })
+  ).stdout.trim();
+  return { commit, root };
+}
 
 interface StubFetchOptions {
   body?: unknown;
@@ -43,6 +78,82 @@ function createStubFetch(
 }
 
 describe("createAppVersionService", () => {
+  it("reports source checkout identity and only marks tracked changes dirty", async () => {
+    const fixture = await createGitFixture();
+    try {
+      await expect(resolveGitBuildIdentity(fixture.root)).resolves.toEqual({
+        branch: "feat/example",
+        commit: fixture.commit,
+        shortCommit: fixture.commit.slice(0, 7),
+        dirty: false,
+      });
+
+      await writeFile(join(fixture.root, "scratch.txt"), "untracked\n");
+      await expect(
+        resolveGitBuildIdentity(fixture.root),
+      ).resolves.toMatchObject({
+        dirty: false,
+      });
+
+      await writeFile(join(fixture.root, "tracked.txt"), "changed\n");
+      await expect(
+        resolveGitBuildIdentity(fixture.root),
+      ).resolves.toMatchObject({
+        dirty: true,
+      });
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports HEAD for a detached checkout and rejects a nested package root", async () => {
+    const fixture = await createGitFixture();
+    try {
+      await execFileAsync("git", ["checkout", "--detach"], {
+        cwd: fixture.root,
+      });
+      await expect(
+        resolveGitBuildIdentity(fixture.root),
+      ).resolves.toMatchObject({
+        branch: "HEAD",
+        commit: fixture.commit,
+      });
+
+      const nestedRoot = join(fixture.root, "node_modules", "bb-app");
+      await mkdir(nestedRoot, { recursive: true });
+      await expect(resolveGitBuildIdentity(nestedRoot)).resolves.toBeNull();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves source checkout identity afresh for every request", async () => {
+    const fixture = await createGitFixture();
+    try {
+      const service = createAppVersionService({
+        config: { appVersion: "0.0.5", isDevelopment: true },
+        logger: testLogger,
+        sourceCheckoutRoot: fixture.root,
+      });
+      const first = await service.getSystemVersion();
+
+      await writeFile(join(fixture.root, "tracked.txt"), "second\n");
+      await execFileAsync("git", ["add", "tracked.txt"], {
+        cwd: fixture.root,
+      });
+      await execFileAsync("git", ["commit", "-m", "second"], {
+        cwd: fixture.root,
+      });
+      const second = await service.getSystemVersion();
+
+      expect(first.build?.commit).toBe(fixture.commit);
+      expect(second.build?.commit).not.toBe(fixture.commit);
+      expect(second.build?.dirty).toBe(false);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   it("skips the npm lookup in development mode", async () => {
     const calls: FetchCall[] = [];
     const service = createAppVersionService({
@@ -52,6 +163,7 @@ describe("createAppVersionService", () => {
     });
     const response = await service.getSystemVersion();
     expect(response).toEqual({
+      build: null,
       currentVersion: "0.0.5",
       isDevelopment: true,
       latestVersion: null,
@@ -110,6 +222,7 @@ describe("createAppVersionService", () => {
     });
     const response = await service.getSystemVersion();
     expect(response).toEqual({
+      build: null,
       currentVersion: "0.0.5",
       isDevelopment: false,
       latestVersion: null,
