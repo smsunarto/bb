@@ -33,7 +33,8 @@ describe("SidebarBuildIdentity", () => {
     expect(identity.querySelector(".truncate")?.textContent).toBe(
       "feat/a-very-long-branch-name",
     );
-    expect(identity.classList.contains("flex-1")).toBe(true);
+    expect(identity.classList.contains("-mx-2")).toBe(true);
+    expect(identity.classList.contains("border-y")).toBe(true);
     expect(identity.querySelector(".shrink-0")?.textContent).toBe("@e6f422e•");
     expect(identity.querySelector("button, a, [tabindex]")).toBeNull();
   });

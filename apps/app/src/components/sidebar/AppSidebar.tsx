@@ -318,6 +318,7 @@ export function AppSidebar({
         </SidebarContent>
         <SidebarFooter className="relative">
           <OverflowFade placement="above" tone="sidebar" size="sm" />
+          <SidebarBuildIdentity build={build} />
           {/* The footer holds a variable number of plugin action buttons, so a
            * narrowed sidebar plus several plugins can no longer fit the action
            * row and the update chips on one line. `flex-wrap-reverse` plus the
@@ -371,11 +372,7 @@ export function AppSidebar({
                 <span className="sr-only">Report a bug</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
-            {build === null ? (
-              <li aria-hidden="true" className="min-w-0 flex-1" />
-            ) : (
-              <SidebarBuildIdentity build={build} />
-            )}
+            <li aria-hidden="true" className="min-w-0 flex-1" />
             <SidebarUpdatesBadge onNavigate={closeOnMobile} />
           </SidebarMenu>
         </SidebarFooter>
