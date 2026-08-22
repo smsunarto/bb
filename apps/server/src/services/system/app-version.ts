@@ -1,15 +1,13 @@
-import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
-import { promisify } from "node:util";
 import semver from "semver";
 import { z } from "zod";
+import { getCheckoutRef, runGit } from "@bb/host-workspace";
 import type {
   SystemBuildIdentity,
   SystemVersionResponse,
 } from "@bb/server-contract";
 import type { ServerLogger, ServerRuntimeConfig } from "../../types.js";
 
-const execFileAsync = promisify(execFile);
 const NPM_LATEST_URL = "https://registry.npmjs.org/bb-app/latest";
 const NPM_LATEST_TIMEOUT_MS = 5_000;
 const NPM_LATEST_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -48,14 +46,6 @@ interface NpmLatestCacheEntry {
   latestVersion: string;
 }
 
-async function runGit(args: readonly string[], cwd: string): Promise<string> {
-  const result = await execFileAsync("git", [...args], {
-    cwd,
-    maxBuffer: 1024 * 1024,
-  });
-  return result.stdout;
-}
-
 /**
  * Reads build identity directly from git so branch switches, new commits, and
  * tracked-file edits are visible without restarting the server. The root check
@@ -68,45 +58,41 @@ export async function resolveGitBuildIdentity(
   try {
     const [expectedRoot, reportedRoot] = await Promise.all([
       realpath(sourceCheckoutRoot),
-      runGit(["rev-parse", "--show-toplevel"], sourceCheckoutRoot).then(
-        (stdout) => realpath(stdout.trim()),
-      ),
+      runGit(["rev-parse", "--show-toplevel"], {
+        cwd: sourceCheckoutRoot,
+      }).then((result) => realpath(result.stdout.trim())),
     ]);
     if (reportedRoot !== expectedRoot) {
       return null;
     }
 
-    const status = await runGit(
-      [
-        "status",
-        "--porcelain=v2",
-        "--branch",
-        "--untracked-files=no",
-        "--ignore-submodules=untracked",
-      ],
-      expectedRoot,
-    );
-    const lines = status.split(/\r?\n/u).filter((line) => line.length > 0);
-    const oidPrefix = "# branch.oid ";
-    const headPrefix = "# branch.head ";
-    const oidLine = lines.find((line) => line.startsWith(oidPrefix));
-    const headLine = lines.find((line) => line.startsWith(headPrefix));
-    const commit = oidLine?.slice(oidPrefix.length);
-    const rawBranch = headLine?.slice(headPrefix.length);
-    if (
-      commit === undefined ||
-      !/^[0-9a-f]{40}$/u.test(commit) ||
-      rawBranch === undefined ||
-      rawBranch.length === 0
-    ) {
+    const [checkout, status] = await Promise.all([
+      getCheckoutRef(expectedRoot),
+      runGit(
+        [
+          "--no-optional-locks",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=no",
+          "--ignore-submodules=untracked",
+        ],
+        { cwd: expectedRoot },
+      ),
+    ]);
+    if (checkout.kind !== "branch" && checkout.kind !== "detached") {
+      return null;
+    }
+
+    const commit = checkout.headSha;
+    if (commit === null || !/^[0-9a-f]{40}$/u.test(commit)) {
       return null;
     }
 
     return {
-      branch: rawBranch === "(detached)" ? "HEAD" : rawBranch,
+      branch: checkout.kind === "branch" ? checkout.branchName : "HEAD",
       commit,
       shortCommit: commit.slice(0, 7),
-      dirty: lines.some((line) => !line.startsWith("# ")),
+      dirty: status.stdout.trim().length > 0,
     };
   } catch {
     return null;
