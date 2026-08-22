@@ -4,13 +4,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
+import type { SystemBuildIdentity } from "@bb/server-contract";
 import {
-  createAppVersionService,
+  createAppVersionService as createAppVersionServiceImpl,
   resolveGitBuildIdentity,
+  type CreateAppVersionServiceArgs,
 } from "../../src/services/system/app-version.js";
 import { testLogger } from "../helpers/test-app.js";
 
 const execFileAsync = promisify(execFile);
+
+function createAppVersionService(
+  args: Omit<CreateAppVersionServiceArgs, "build"> & {
+    build?: SystemBuildIdentity | null;
+  },
+) {
+  const { build = null, ...rest } = args;
+  return createAppVersionServiceImpl({ ...rest, build });
+}
 
 interface GitFixture {
   commit: string;
@@ -127,13 +138,14 @@ describe("createAppVersionService", () => {
     }
   });
 
-  it("resolves source checkout identity afresh for every request", async () => {
+  it("keeps the source checkout identity captured at process start", async () => {
     const fixture = await createGitFixture();
     try {
+      const build = await resolveGitBuildIdentity(fixture.root);
       const service = createAppVersionService({
+        build,
         config: { appVersion: "0.0.5", isDevelopment: true },
         logger: testLogger,
-        sourceCheckoutRoot: fixture.root,
       });
       const first = await service.getSystemVersion();
 
@@ -147,7 +159,7 @@ describe("createAppVersionService", () => {
       const second = await service.getSystemVersion();
 
       expect(first.build?.commit).toBe(fixture.commit);
-      expect(second.build?.commit).not.toBe(fixture.commit);
+      expect(second.build?.commit).toBe(fixture.commit);
       expect(second.build?.dirty).toBe(false);
     } finally {
       await rm(fixture.root, { recursive: true, force: true });

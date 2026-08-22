@@ -11,6 +11,7 @@ import type { ServerLogger, ServerRuntimeConfig } from "../../types.js";
 const NPM_LATEST_URL = "https://registry.npmjs.org/bb-app/latest";
 const NPM_LATEST_TIMEOUT_MS = 5_000;
 const NPM_LATEST_CACHE_TTL_MS = 60 * 60 * 1000;
+const GIT_IDENTITY_TIMEOUT_MS = 5_000;
 const UPGRADE_COMMAND = "npx bb-app@latest";
 
 const npmLatestResponseSchema = z
@@ -30,11 +31,10 @@ export interface AppVersionGetSystemVersionArgs {
 }
 
 export interface CreateAppVersionServiceArgs {
+  build: SystemBuildIdentity | null;
   config: Pick<ServerRuntimeConfig, "appVersion" | "isDevelopment">;
   fetchImpl?: typeof fetch;
   logger: ServerLogger;
-  /** Repository root when the server is running from a source checkout. */
-  sourceCheckoutRoot?: string;
   /** Override the cache TTL. Tests use this; production uses the default. */
   cacheTtlMs?: number;
   /** Inject a custom clock for cache invalidation tests. */
@@ -47,9 +47,8 @@ interface NpmLatestCacheEntry {
 }
 
 /**
- * Reads build identity directly from git so branch switches, new commits, and
- * tracked-file edits are visible without restarting the server. The root check
- * prevents an installed package inside somebody else's repository from
+ * Resolves the source checkout identity once during server startup. The root
+ * check prevents an installed package inside somebody else's repository from
  * inheriting that unrelated checkout's identity.
  */
 export async function resolveGitBuildIdentity(
@@ -60,6 +59,7 @@ export async function resolveGitBuildIdentity(
       realpath(sourceCheckoutRoot),
       runGit(["rev-parse", "--show-toplevel"], {
         cwd: sourceCheckoutRoot,
+        timeoutMs: GIT_IDENTITY_TIMEOUT_MS,
       }).then((result) => realpath(result.stdout.trim())),
     ]);
     if (reportedRoot !== expectedRoot) {
@@ -67,7 +67,7 @@ export async function resolveGitBuildIdentity(
     }
 
     const [checkout, status] = await Promise.all([
-      getCheckoutRef(expectedRoot),
+      getCheckoutRef(expectedRoot, { timeoutMs: GIT_IDENTITY_TIMEOUT_MS }),
       runGit(
         [
           "--no-optional-locks",
@@ -76,7 +76,7 @@ export async function resolveGitBuildIdentity(
           "--untracked-files=no",
           "--ignore-submodules=untracked",
         ],
-        { cwd: expectedRoot },
+        { cwd: expectedRoot, timeoutMs: GIT_IDENTITY_TIMEOUT_MS },
       ),
     ]);
     if (checkout.kind !== "branch" && checkout.kind !== "detached") {
@@ -107,7 +107,7 @@ export function createAppVersionService(
   const now = args.now ?? (() => Date.now());
   const logger = args.logger;
   const config = args.config;
-  const sourceCheckoutRoot = args.sourceCheckoutRoot;
+  const build = args.build;
 
   let cache: NpmLatestCacheEntry | null = null;
   let inflight: Promise<string | null> | null = null;
@@ -193,10 +193,7 @@ export function createAppVersionService(
       args: AppVersionGetSystemVersionArgs = {},
     ): Promise<SystemVersionResponse> {
       const baseResponse: SystemVersionResponse = {
-        build:
-          sourceCheckoutRoot === undefined
-            ? null
-            : await resolveGitBuildIdentity(sourceCheckoutRoot),
+        build,
         currentVersion: config.appVersion,
         latestVersion: null,
         source: "npm",

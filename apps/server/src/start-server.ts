@@ -13,7 +13,10 @@ import { createMachineAuthService } from "./services/machine-auth.js";
 import { resolveBbAppPackage } from "./services/install/bb-app-artifact.js";
 import { resolveBuiltinSkillsRootPath } from "./services/skills/builtin-skills-copy.js";
 import { SkillTreeRegistry } from "./services/skills/injected-skills.js";
-import { createAppVersionService } from "./services/system/app-version.js";
+import {
+  createAppVersionService,
+  resolveGitBuildIdentity,
+} from "./services/system/app-version.js";
 import { createBbAppManagedConfigReloader } from "./services/system/bb-app-managed-config.js";
 import { startEventLoopStallMonitor } from "./services/system/event-loop-stall-monitor.js";
 import {
@@ -71,6 +74,10 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
         : undefined,
     )
     .catch(() => undefined);
+  const buildIdentity =
+    sourceCheckoutRoot === undefined
+      ? null
+      : await resolveGitBuildIdentity(sourceCheckoutRoot);
   const staticDir =
     isProduction && existsSync(appDistDir) ? appDistDir : undefined;
   const runtimeConfig: ServerRuntimeConfig = {
@@ -141,9 +148,9 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
   pendingInteractions.start();
 
   const appVersion = createAppVersionService({
+    build: buildIdentity,
     config: runtimeConfig,
     logger,
-    sourceCheckoutRoot,
   });
   const { app, closeWebSockets, injectWebSocket, pluginService } = createApp(
     {
