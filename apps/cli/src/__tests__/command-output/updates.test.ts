@@ -36,6 +36,7 @@ const hosts: Host[] = [
 ];
 
 const version = {
+  build: null,
   currentVersion: "0.0.32",
   latestVersion: "0.0.33",
   source: "npm" as const,

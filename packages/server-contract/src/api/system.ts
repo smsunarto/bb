@@ -253,6 +253,18 @@ export const themeCatalogResponseSchema = z.object({
 });
 export type ThemeCatalogResponse = z.infer<typeof themeCatalogResponseSchema>;
 
+export const systemBuildIdentitySchema = z.object({
+  /** Current branch name, or "HEAD" for a detached checkout. */
+  branch: z.string().min(1),
+  /** Full commit SHA for the running source checkout. */
+  commit: z.string().regex(/^[0-9a-f]{40}$/u),
+  /** Seven-character commit SHA used by compact display surfaces. */
+  shortCommit: z.string().regex(/^[0-9a-f]{7}$/u),
+  /** Whether tracked files have staged or unstaged changes. */
+  dirty: z.boolean(),
+});
+export type SystemBuildIdentity = z.infer<typeof systemBuildIdentitySchema>;
+
 export const systemVersionResponseSchema = z.object({
   /** Version of the running bb-app package, read from package.json. */
   currentVersion: z.string(),
@@ -264,6 +276,8 @@ export const systemVersionResponseSchema = z.object({
   updateAvailable: z.boolean(),
   /** Mirrors deps.config.isDevelopment so the frontend can skip the toast. */
   isDevelopment: z.boolean(),
+  /** Git identity for a source checkout; null for installed builds or failures. */
+  build: systemBuildIdentitySchema.nullable(),
   /** Command users should run to upgrade. Server-owned product policy. */
   upgradeCommand: z.string(),
 });

@@ -1,11 +1,17 @@
+import { realpath } from "node:fs/promises";
 import semver from "semver";
 import { z } from "zod";
-import type { SystemVersionResponse } from "@bb/server-contract";
+import { getCheckoutRef, runGit } from "@bb/host-workspace";
+import type {
+  SystemBuildIdentity,
+  SystemVersionResponse,
+} from "@bb/server-contract";
 import type { ServerLogger, ServerRuntimeConfig } from "../../types.js";
 
 const NPM_LATEST_URL = "https://registry.npmjs.org/bb-app/latest";
 const NPM_LATEST_TIMEOUT_MS = 5_000;
 const NPM_LATEST_CACHE_TTL_MS = 60 * 60 * 1000;
+const GIT_IDENTITY_TIMEOUT_MS = 5_000;
 const UPGRADE_COMMAND = "npx bb-app@latest";
 
 const npmLatestResponseSchema = z
@@ -25,6 +31,7 @@ export interface AppVersionGetSystemVersionArgs {
 }
 
 export interface CreateAppVersionServiceArgs {
+  build: SystemBuildIdentity | null;
   config: Pick<ServerRuntimeConfig, "appVersion" | "isDevelopment">;
   fetchImpl?: typeof fetch;
   logger: ServerLogger;
@@ -39,6 +46,59 @@ interface NpmLatestCacheEntry {
   latestVersion: string;
 }
 
+/**
+ * Resolves the source checkout identity once during server startup. The root
+ * check prevents an installed package inside somebody else's repository from
+ * inheriting that unrelated checkout's identity.
+ */
+export async function resolveGitBuildIdentity(
+  sourceCheckoutRoot: string,
+): Promise<SystemBuildIdentity | null> {
+  try {
+    const [expectedRoot, reportedRoot] = await Promise.all([
+      realpath(sourceCheckoutRoot),
+      runGit(["rev-parse", "--show-toplevel"], {
+        cwd: sourceCheckoutRoot,
+        timeoutMs: GIT_IDENTITY_TIMEOUT_MS,
+      }).then((result) => realpath(result.stdout.trim())),
+    ]);
+    if (reportedRoot !== expectedRoot) {
+      return null;
+    }
+
+    const [checkout, status] = await Promise.all([
+      getCheckoutRef(expectedRoot, { timeoutMs: GIT_IDENTITY_TIMEOUT_MS }),
+      runGit(
+        [
+          "--no-optional-locks",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=no",
+          "--ignore-submodules=untracked",
+        ],
+        { cwd: expectedRoot, timeoutMs: GIT_IDENTITY_TIMEOUT_MS },
+      ),
+    ]);
+    if (checkout.kind !== "branch" && checkout.kind !== "detached") {
+      return null;
+    }
+
+    const commit = checkout.headSha;
+    if (commit === null || !/^[0-9a-f]{40}$/u.test(commit)) {
+      return null;
+    }
+
+    return {
+      branch: checkout.kind === "branch" ? checkout.branchName : "HEAD",
+      commit,
+      shortCommit: commit.slice(0, 7),
+      dirty: status.stdout.trim().length > 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function createAppVersionService(
   args: CreateAppVersionServiceArgs,
 ): AppVersionService {
@@ -47,6 +107,7 @@ export function createAppVersionService(
   const now = args.now ?? (() => Date.now());
   const logger = args.logger;
   const config = args.config;
+  const build = args.build;
 
   let cache: NpmLatestCacheEntry | null = null;
   let inflight: Promise<string | null> | null = null;
@@ -132,6 +193,7 @@ export function createAppVersionService(
       args: AppVersionGetSystemVersionArgs = {},
     ): Promise<SystemVersionResponse> {
       const baseResponse: SystemVersionResponse = {
+        build,
         currentVersion: config.appVersion,
         latestVersion: null,
         source: "npm",

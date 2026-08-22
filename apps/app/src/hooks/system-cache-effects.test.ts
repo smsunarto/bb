@@ -198,6 +198,7 @@ describe("system cache effects", () => {
     const queryClient = createCacheEffectQueryClient();
     const versionKey = systemVersionQueryKey();
     queryClient.setQueryData(versionKey, {
+      build: null,
       currentVersion: "0.0.5",
       latestVersion: "0.0.6",
       source: "npm",

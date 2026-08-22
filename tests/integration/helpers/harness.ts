@@ -272,6 +272,7 @@ async function startIntegrationServer(
   });
   pendingInteractions.start();
   const appVersion = createAppVersionService({
+    build: null,
     config,
     logger: testLogger,
   });

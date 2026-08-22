@@ -33,6 +33,7 @@ vi.mock("@/hooks/queries/system-queries", () => ({
       },
     },
   }),
+  useSystemVersion: () => ({ data: undefined }),
 }));
 
 vi.mock("@/lib/plugin-slots", () => ({

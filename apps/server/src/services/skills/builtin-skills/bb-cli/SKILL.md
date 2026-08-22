@@ -10,7 +10,8 @@ message agents, or inspect projects, providers, and environments.
 
 ## Start With Context
 
-- Use `bb status` to identify the current project, thread, and environment.
+- Use `bb status` to identify the current project, thread, environment, and the
+  running server's branch and commit when it is a source build.
 - Prefer `--json` when command output will drive follow-up work.
 - Run `bb guide` for the system overview and `bb guide <chapter>` for full
   command reference.

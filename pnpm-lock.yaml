@@ -757,6 +757,9 @@ importers:
       '@bb/host-daemon-contract':
         specifier: workspace:*
         version: link:../../packages/host-daemon-contract
+      '@bb/host-workspace':
+        specifier: workspace:*
+        version: link:../../packages/host-workspace
       '@bb/logger':
         specifier: workspace:*
         version: link:../../packages/logger

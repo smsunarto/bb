@@ -17,6 +17,7 @@ describe("GET /api/v1/system/version", () => {
       {
         appVersion: "0.0.5",
         appVersionService: createStubAppVersionService({
+          build: null,
           currentVersion: "0.0.5",
           latestVersion: null,
           source: "npm",
@@ -30,6 +31,7 @@ describe("GET /api/v1/system/version", () => {
         const response = await harness.app.request("/api/v1/system/version");
         expect(response.status).toBe(200);
         const body = (await readJson(response)) as SystemVersionResponse;
+        expect(body.build).toBeNull();
         expect(body.isDevelopment).toBe(true);
         expect(body.updateAvailable).toBe(false);
         expect(body.latestVersion).toBeNull();

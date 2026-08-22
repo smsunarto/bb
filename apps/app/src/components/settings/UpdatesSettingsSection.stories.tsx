@@ -195,6 +195,7 @@ export function HealthyFleet() {
         <UpdatesRowList>
           <BbAppUpdateRows
             systemVersion={{
+              build: null,
               currentVersion: "0.0.33",
               latestVersion: "0.0.33",
               source: "npm",
@@ -273,6 +274,7 @@ export function MixedFleet() {
         <UpdatesRowList>
           <BbAppUpdateRows
             systemVersion={{
+              build: null,
               currentVersion: "0.0.32",
               latestVersion: "0.0.33",
               source: "npm",
@@ -346,6 +348,7 @@ export function WebAppUpdateAvailable() {
         <UpdatesRowList>
           <BbAppUpdateRows
             systemVersion={{
+              build: null,
               currentVersion: "0.0.32",
               latestVersion: "0.0.33",
               source: "npm",

@@ -11,6 +11,7 @@ interface SourceCliResult {
 }
 
 interface StatusWrapperPayload {
+  build: null;
   childThreads: null;
   dataDir: null;
   pendingTodos: null;
@@ -96,6 +97,7 @@ describe("source CLI wrapper", () => {
 
     const payload: StatusWrapperPayload = JSON.parse(result.stdout);
     expect(payload).toEqual({
+      build: null,
       childThreads: null,
       dataDir: null,
       pendingTodos: null,

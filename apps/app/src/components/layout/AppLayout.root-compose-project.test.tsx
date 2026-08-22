@@ -10,6 +10,15 @@ const ROOT_COMPOSE_PROJECT_ID_STORAGE_KEY = "bb.root-compose.project-id";
 
 const mockUseThread = vi.hoisted(() => vi.fn());
 const mockUseThreadDetailBootstrap = vi.hoisted(() => vi.fn());
+const systemVersionState = vi.hoisted(() => ({
+  build: null as {
+    branch: string;
+    commit: string;
+    dirty: boolean;
+    shortCommit: string;
+  } | null,
+}));
+const desktopState = vi.hoisted(() => ({ enabled: false }));
 
 vi.mock("@/components/sidebar/AppSidebar", () => ({
   AppSidebar: () => <aside data-testid="app-sidebar" />,
@@ -27,6 +36,11 @@ vi.mock("@/hooks/queries/system-queries", () => ({
         newOnboarding: false,
         toolsHub: true,
       },
+    },
+  }),
+  useSystemVersion: () => ({
+    data: {
+      build: systemVersionState.build,
     },
   }),
 }));
@@ -77,7 +91,7 @@ vi.mock("@/lib/bb-desktop", () => ({
   MACOS_TRAFFIC_LIGHT_RESERVE_OFFSET_CLASS: "",
   MACOS_WINDOW_DRAG_CLASS: "",
   MACOS_WINDOW_NO_DRAG_CLASS: "",
-  getBbDesktopInfo: () => null,
+  getBbDesktopInfo: () => (desktopState.enabled ? { platform: "macos" } : null),
   shouldReserveMacosTrafficLights: () => false,
   shouldUseMacosDesktopChrome: () => false,
 }));
@@ -143,6 +157,9 @@ vi.mock("@/hooks/queries/thread-queries", () => ({
 
 describe("AppLayout root compose project preference", () => {
   beforeEach(() => {
+    desktopState.enabled = false;
+    systemVersionState.build = null;
+    delete document.documentElement.dataset.bbBuild;
     window.localStorage.clear();
     mockUseThread.mockReturnValue({
       data: {
@@ -162,6 +179,7 @@ describe("AppLayout root compose project preference", () => {
 
   afterEach(() => {
     cleanup();
+    delete document.documentElement.dataset.bbBuild;
     window.localStorage.clear();
     vi.clearAllMocks();
   });
@@ -189,5 +207,32 @@ describe("AppLayout root compose project preference", () => {
     expect(
       window.localStorage.getItem(ROOT_COMPOSE_PROJECT_ID_STORAGE_KEY),
     ).toBe("proj_last_run");
+  });
+
+  it("exposes source identity in the DOM and desktop window title", async () => {
+    desktopState.enabled = true;
+    systemVersionState.build = {
+      branch: "feat/example",
+      commit: "e6f422ef5c1a9d3b7f0e2a4c8d1b6e9f3a5c7d20",
+      shortCommit: "e6f422e",
+      dirty: true,
+    };
+
+    render(
+      <MemoryRouter
+        initialEntries={["/projects/proj_opened/threads/thr_opened"]}
+      >
+        <AppLayout>
+          <div>Thread route</div>
+        </AppLayout>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.bbBuild).toBe(
+        "feat/example@e6f422e+dirty",
+      );
+      expect(document.title).toBe("Opened Thread — feat/example@e6f422e");
+    });
   });
 });
