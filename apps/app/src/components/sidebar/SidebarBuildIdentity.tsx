@@ -1,4 +1,6 @@
 import type { SystemBuildIdentity } from "@bb/server-contract";
+import { Badge } from "@bb/shared-ui/badge";
+import { Icon } from "@bb/shared-ui/icon";
 
 export interface SidebarBuildIdentityProps {
   build: SystemBuildIdentity | null;
@@ -11,16 +13,22 @@ export function SidebarBuildIdentity({ build }: SidebarBuildIdentityProps) {
   }
 
   return (
-    <div
+    <Badge
+      variant="secondary"
       data-testid="sidebar-build-identity"
       title={`${build.branch}@${build.commit}${build.dirty ? " (dirty)" : ""}`}
-      className="-mx-2 flex min-w-0 items-center justify-center border-y border-sidebar-border bg-sidebar-accent/50 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
+      className="-mx-2 flex w-auto min-w-0 gap-2 rounded-none border-x-0 border-y border-sidebar-border bg-sidebar-accent/60 px-2.5 py-1.5 font-normal text-muted-foreground shadow-none group-data-[collapsible=icon]:hidden"
     >
-      <span className="min-w-0 truncate">{build.branch}</span>
-      <span className="shrink-0">
+      <Icon
+        name="GitBranch"
+        aria-hidden
+        className="size-3.5 shrink-0 text-sidebar-foreground/60"
+      />
+      <span className="min-w-0 flex-1 truncate">{build.branch}</span>
+      <span className="shrink-0 rounded-sm border border-sidebar-border bg-sidebar px-1.5 py-0.5 font-mono text-sidebar-foreground/80">
         @{build.shortCommit}
         {build.dirty ? "•" : null}
       </span>
-    </div>
+    </Badge>
   );
 }
