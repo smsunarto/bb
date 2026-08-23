@@ -65,36 +65,29 @@ export function registerStatusCommand(
         };
 
         let serverAvailable = false;
-        const sdk = createCliBbSdk(getUrl());
 
-        // Best-effort system metadata works without project/thread context.
-        // Fetch both endpoints together so an unreachable server does not
-        // serialize two waits in the common no-context path.
-        await Promise.all([
-          (async () => {
-            try {
-              const response = await cliFetch(
-                `${getUrl()}/api/v1/system/config`,
-              );
-              if (!response.ok) return;
-              const config = (await response.json()) as { dataDir?: unknown };
-              if (typeof config.dataDir !== "string") return;
+        // Best-effort: the data dir comes from system config (where theme/,
+        // plugins, and the DB live). Works without any project/thread context.
+        try {
+          const response = await cliFetch(`${getUrl()}/api/v1/system/config`);
+          if (response.ok) {
+            const config = (await response.json()) as { dataDir?: unknown };
+            if (typeof config.dataDir === "string") {
               payload.dataDir = config.dataDir;
               serverAvailable = true;
-            } catch {
-              // Server unreachable — leave dataDir null.
             }
-          })(),
-          (async () => {
-            try {
-              const version = await sdk.system.version();
-              payload.build = version.build ?? null;
-              serverAvailable = true;
-            } catch {
-              // Older or unreachable server — leave build null.
-            }
-          })(),
-        ]);
+          }
+        } catch {
+          // Server unreachable — leave dataDir null.
+        }
+
+        const sdk = createCliBbSdk(getUrl());
+        try {
+          payload.build = (await sdk.system.version()).build;
+          serverAvailable = true;
+        } catch {
+          // Older or unreachable server — leave build null.
+        }
 
         // Try to fetch enriched data from the server
         if (context.projectId || context.threadId) {

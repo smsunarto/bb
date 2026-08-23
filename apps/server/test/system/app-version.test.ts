@@ -4,24 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import type { SystemBuildIdentity } from "@bb/server-contract";
 import {
-  createAppVersionService as createAppVersionServiceImpl,
+  createAppVersionService,
   resolveGitBuildIdentity,
-  type CreateAppVersionServiceArgs,
 } from "../../src/services/system/app-version.js";
 import { testLogger } from "../helpers/test-app.js";
 
 const execFileAsync = promisify(execFile);
-
-function createAppVersionService(
-  args: Omit<CreateAppVersionServiceArgs, "build"> & {
-    build?: SystemBuildIdentity | null;
-  },
-) {
-  const { build = null, ...rest } = args;
-  return createAppVersionServiceImpl({ ...rest, build });
-}
 
 interface GitFixture {
   commit: string;
@@ -141,11 +130,10 @@ describe("createAppVersionService", () => {
   it("keeps the source checkout identity captured at process start", async () => {
     const fixture = await createGitFixture();
     try {
-      const build = await resolveGitBuildIdentity(fixture.root);
       const service = createAppVersionService({
-        build,
         config: { appVersion: "0.0.5", isDevelopment: true },
         logger: testLogger,
+        sourceCheckoutRoot: fixture.root,
       });
       const first = await service.getSystemVersion();
 

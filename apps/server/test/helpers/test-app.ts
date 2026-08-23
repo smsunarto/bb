@@ -172,7 +172,6 @@ export async function createTestAppHarness(
   const appVersion =
     appVersionService ??
     createAppVersionService({
-      build: null,
       config,
       logger: testLogger,
     });

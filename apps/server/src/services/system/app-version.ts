@@ -31,10 +31,11 @@ export interface AppVersionGetSystemVersionArgs {
 }
 
 export interface CreateAppVersionServiceArgs {
-  build: SystemBuildIdentity | null;
   config: Pick<ServerRuntimeConfig, "appVersion" | "isDevelopment">;
   fetchImpl?: typeof fetch;
   logger: ServerLogger;
+  /** Repository root when the server is running from a source checkout. */
+  sourceCheckoutRoot?: string;
   /** Override the cache TTL. Tests use this; production uses the default. */
   cacheTtlMs?: number;
   /** Inject a custom clock for cache invalidation tests. */
@@ -107,7 +108,10 @@ export function createAppVersionService(
   const now = args.now ?? (() => Date.now());
   const logger = args.logger;
   const config = args.config;
-  const build = args.build;
+  const build =
+    args.sourceCheckoutRoot === undefined
+      ? Promise.resolve(null)
+      : resolveGitBuildIdentity(args.sourceCheckoutRoot);
 
   let cache: NpmLatestCacheEntry | null = null;
   let inflight: Promise<string | null> | null = null;
@@ -193,7 +197,7 @@ export function createAppVersionService(
       args: AppVersionGetSystemVersionArgs = {},
     ): Promise<SystemVersionResponse> {
       const baseResponse: SystemVersionResponse = {
-        build,
+        build: await build,
         currentVersion: config.appVersion,
         latestVersion: null,
         source: "npm",

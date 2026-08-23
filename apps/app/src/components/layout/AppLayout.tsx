@@ -96,10 +96,6 @@ import {
   useSystemConfig,
   useSystemVersion,
 } from "@/hooks/queries/system-queries";
-import {
-  formatBuildDomIdentity,
-  formatBuildIdentity,
-} from "@/lib/build-identity";
 
 const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
 const SIDEBAR_OPEN_KEY = "bb.sidebar.open";
@@ -512,6 +508,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const systemConfigQuery = useSystemConfig();
   const systemVersionQuery = useSystemVersion();
   const build = systemVersionQuery.data?.build ?? null;
+  const buildIdentity =
+    build === null ? null : `${build.branch}@${build.shortCommit}`;
   const toolsHubEnabled = systemConfigQuery.data?.experiments.toolsHub === true;
   const isGlobalToolsView =
     toolsHubEnabled && isToolsRoutePath(location.pathname);
@@ -820,17 +818,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.title =
-      desktopInfo !== null && build !== null
-        ? `${documentTitle} — ${formatBuildIdentity(build)}`
+      desktopInfo !== null && buildIdentity !== null
+        ? `${documentTitle} — ${buildIdentity}`
         : documentTitle;
-  }, [build, desktopInfo, documentTitle]);
+  }, [buildIdentity, desktopInfo, documentTitle]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     if (build === null) {
       delete document.documentElement.dataset.bbBuild;
     } else {
-      document.documentElement.dataset.bbBuild = formatBuildDomIdentity(build);
+      document.documentElement.dataset.bbBuild =
+        `${build.branch}@${build.shortCommit}${build.dirty ? "+dirty" : ""}`;
     }
     return () => {
       delete document.documentElement.dataset.bbBuild;
