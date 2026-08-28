@@ -10,6 +10,7 @@ import { registerProviderCliInstallQueryClient } from "./components/provider-cli
 import { initializePreferredTheme } from "./hooks/useTheme";
 import { initializeFavicon } from "./lib/favicon-color-preference";
 import { installForeignDomMutationGuard } from "./lib/foreign-dom-mutation-guard";
+import { startPwaUpdateRegistration } from "./lib/pwa-update";
 import {
   createAppQueryClient,
   installAppQueryClientBrowserEvents,
@@ -33,6 +34,7 @@ initializePreferredTheme();
 applyCachedAppThemeCss();
 initializeFavicon();
 disableGlobalCursorStyles();
+startPwaUpdateRegistration();
 
 createRoot(document.getElementById("root")!, {
   onUncaughtError: (error, errorInfo) => {

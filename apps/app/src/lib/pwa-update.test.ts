@@ -12,19 +12,31 @@ interface RecordedToast {
   title: string;
 }
 
-class FakeServiceWorkerContainer extends EventTarget {
-  controller: object | null = null;
-}
-
 function createHarness(
   overrides: Partial<
     Pick<PwaUpdateDependencies, "appSurface" | "isProduction" | "serviceWorker">
   > = {},
 ) {
-  const serviceWorker = new FakeServiceWorkerContainer();
+  const controllerChangeListeners = new Set<() => void>();
+  let controller: object | null = {};
+  const serviceWorker = {
+    controller: () => controller,
+    onControllerChange: vi.fn((listener: () => void) => {
+      controllerChangeListeners.add(listener);
+    }),
+    dispatchControllerChange: (nextController: object | null = {}) => {
+      controller = nextController;
+      for (const listener of controllerChangeListeners) listener();
+    },
+    setController: (nextController: object | null) => {
+      controller = nextController;
+    },
+  };
   const activateUpdate = vi.fn(async () => {});
   const reload = vi.fn();
   const reportError = vi.fn();
+  const scheduleUpdateCheck =
+    vi.fn<PwaUpdateDependencies["scheduleUpdateCheck"]>();
   const toasts: RecordedToast[] = [];
   let registrationOptions:
     | Parameters<PwaUpdateDependencies["registerServiceWorker"]>[0]
@@ -43,6 +55,7 @@ function createHarness(
     registerServiceWorker,
     reload,
     reportError,
+    scheduleUpdateCheck,
     serviceWorker,
     showToast: (title, options) => {
       toasts.push({ options, title });
@@ -57,6 +70,8 @@ function createHarness(
     getRegistrationOptions: () => registrationOptions,
     registerServiceWorker,
     reload,
+    reportError,
+    scheduleUpdateCheck,
     serviceWorker,
     toasts,
   };
@@ -131,26 +146,13 @@ describe("PWA update registration", () => {
     expect(harness.toasts[1]?.options.id).toBe(harness.toasts[0]?.options.id);
   });
 
-  it("installs the controller listener before one activation request", () => {
-    const operations: string[] = [];
+  it("allows one activation request at a time", async () => {
     const harness = createHarness();
-    harness.serviceWorker.addEventListener = (type, listener) => {
-      operations.push("listen");
-      EventTarget.prototype.addEventListener.call(
-        harness.serviceWorker,
-        type,
-        listener,
-      );
-    };
-    harness.dependencies.registerServiceWorker = (options) => {
-      const activateUpdate = async () => {
-        operations.push("activate");
-      };
-      harness.activateUpdate.mockImplementation(activateUpdate);
-      const registeredActivateUpdate = harness.activateUpdate;
-      harness.registerServiceWorker(options);
-      return registeredActivateUpdate;
-    };
+    let resolveActivation: (() => void) | undefined;
+    const pendingActivation = new Promise<void>((resolve) => {
+      resolveActivation = resolve;
+    });
+    harness.activateUpdate.mockReturnValueOnce(pendingActivation);
     startPwaUpdateRegistration(harness.dependencies);
     harness.getRegistrationOptions()?.onNeedRefresh();
     const reloadAction = harness.toasts[0]?.options.action.onClick;
@@ -158,46 +160,121 @@ describe("PWA update registration", () => {
     reloadAction?.();
     reloadAction?.();
 
-    expect(operations).toEqual(["listen", "activate"]);
     expect(harness.activateUpdate).toHaveBeenCalledOnce();
     expect(harness.activateUpdate).toHaveBeenCalledWith();
+    resolveActivation?.();
+    await pendingActivation;
+    await Promise.resolve();
+    reloadAction?.();
+    expect(harness.activateUpdate).toHaveBeenCalledTimes(2);
   });
 
-  it("reloads after a new service worker controls the page", () => {
+  it("reloads when an activated update takes control after Reload", () => {
     const harness = createHarness();
-    const previousController = {};
-    harness.serviceWorker.controller = previousController;
+    harness.serviceWorker.setController(null);
     startPwaUpdateRegistration(harness.dependencies);
-    harness.getRegistrationOptions()?.onNeedRefresh();
-    harness.toasts[0]?.options.action.onClick();
 
-    harness.serviceWorker.dispatchEvent(new Event("controllerchange"));
+    harness.serviceWorker.dispatchControllerChange();
     expect(harness.reload).not.toHaveBeenCalled();
 
-    harness.serviceWorker.controller = {};
-    harness.serviceWorker.dispatchEvent(new Event("controllerchange"));
-    harness.serviceWorker.dispatchEvent(new Event("controllerchange"));
+    harness.getRegistrationOptions()?.onNeedRefresh();
+    harness.toasts[0]?.options.action.onClick();
+    expect(harness.activateUpdate).toHaveBeenCalledOnce();
+    harness.serviceWorker.dispatchControllerChange();
 
     expect(harness.reload).toHaveBeenCalledOnce();
   });
 
-  it("shares one reload latch with the plugin controller callback", () => {
+  it("registers one controller change listener", () => {
     const harness = createHarness();
     startPwaUpdateRegistration(harness.dependencies);
     const registrationOptions = harness.getRegistrationOptions();
+
+    registrationOptions?.onNeedRefresh();
     registrationOptions?.onNeedRefresh();
     harness.toasts[0]?.options.action.onClick();
+    harness.toasts[1]?.options.action.onClick();
 
-    harness.serviceWorker.controller = {};
+    expect(harness.serviceWorker.onControllerChange).toHaveBeenCalledOnce();
+    expect(harness.serviceWorker.onControllerChange).toHaveBeenCalledWith(
+      expect.any(Function),
+    );
+  });
+
+  it("reloads only tabs where the user consented", () => {
+    const consentingTab = createHarness();
+    const passiveTab = createHarness();
+    startPwaUpdateRegistration(consentingTab.dependencies);
+    startPwaUpdateRegistration(passiveTab.dependencies);
+    consentingTab.getRegistrationOptions()?.onNeedRefresh();
+    passiveTab.getRegistrationOptions()?.onNeedRefresh();
+
+    consentingTab.toasts[0]?.options.action.onClick();
+    consentingTab.getRegistrationOptions()?.onNeedReload();
+    passiveTab.getRegistrationOptions()?.onNeedReload();
+    consentingTab.serviceWorker.dispatchControllerChange();
+    passiveTab.serviceWorker.dispatchControllerChange();
+
+    expect(consentingTab.reload).toHaveBeenCalledOnce();
+    expect(passiveTab.reload).not.toHaveBeenCalled();
+
+    passiveTab.toasts[0]?.options.action.onClick();
+    expect(passiveTab.reload).toHaveBeenCalledOnce();
+    expect(passiveTab.activateUpdate).not.toHaveBeenCalled();
+  });
+
+  it("reloads after a late update prompt follows controller change", () => {
+    const harness = createHarness();
+    startPwaUpdateRegistration(harness.dependencies);
+    const registrationOptions = harness.getRegistrationOptions();
+
+    registrationOptions?.onNeedRefresh();
     registrationOptions?.onNeedReload();
-    harness.serviceWorker.dispatchEvent(new Event("controllerchange"));
+    registrationOptions?.onNeedRefresh();
+    harness.toasts[1]?.options.action.onClick();
 
     expect(harness.reload).toHaveBeenCalledOnce();
+    expect(harness.activateUpdate).not.toHaveBeenCalled();
+  });
+
+  it("checks for updates every hour after registration", () => {
+    const harness = createHarness();
+    const update = vi.fn(async () => {});
+    startPwaUpdateRegistration(harness.dependencies);
+
+    harness.getRegistrationOptions()?.onRegisteredSW("/sw.js", update);
+    expect(harness.scheduleUpdateCheck).toHaveBeenCalledWith(
+      expect.any(Function),
+      60 * 60 * 1_000,
+    );
+
+    const scheduledUpdate = harness.scheduleUpdateCheck.mock.calls[0]?.[0];
+    scheduledUpdate?.();
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("reports periodic update check failures", async () => {
+    const harness = createHarness();
+    const error = new Error("update check failed");
+    const update = vi.fn<() => Promise<void>>().mockRejectedValue(error);
+    startPwaUpdateRegistration(harness.dependencies);
+    harness.getRegistrationOptions()?.onRegisteredSW("/sw.js", update);
+
+    harness.scheduleUpdateCheck.mock.calls[0]?.[0]?.();
+
+    await vi.waitFor(() => {
+      expect(harness.reportError).toHaveBeenCalledWith(
+        "Failed to check for a bb service worker update",
+        error,
+      );
+    });
   });
 
   it("allows an activation retry after a rejected request", async () => {
     const harness = createHarness();
-    harness.activateUpdate.mockRejectedValueOnce(new Error("activation failed"));
+    harness.activateUpdate.mockRejectedValueOnce(
+      new Error("activation failed"),
+    );
     startPwaUpdateRegistration(harness.dependencies);
     harness.getRegistrationOptions()?.onNeedRefresh();
     const reloadAction = harness.toasts[0]?.options.action.onClick;
@@ -205,9 +282,46 @@ describe("PWA update registration", () => {
     reloadAction?.();
     await vi.waitFor(() => {
       expect(harness.activateUpdate).toHaveBeenCalledOnce();
+      expect(harness.reportError).toHaveBeenCalledWith(
+        "Failed to activate the bb service worker update",
+        expect.any(Error),
+      );
     });
     reloadAction?.();
 
     expect(harness.activateUpdate).toHaveBeenCalledTimes(2);
+    harness.serviceWorker.dispatchControllerChange();
+    expect(harness.reload).toHaveBeenCalledOnce();
+  });
+
+  it("keeps reload consent after a later activation request fails", async () => {
+    const harness = createHarness();
+    let resolveFirstRequest: (() => void) | undefined;
+    const firstRequest = new Promise<void>((resolve) => {
+      resolveFirstRequest = resolve;
+    });
+    harness.activateUpdate
+      .mockReturnValueOnce(firstRequest)
+      .mockRejectedValueOnce(new Error("retry failed"));
+    startPwaUpdateRegistration(harness.dependencies);
+    harness.getRegistrationOptions()?.onNeedRefresh();
+    const reloadAction = harness.toasts[0]?.options.action.onClick;
+
+    reloadAction?.();
+    expect(harness.activateUpdate).toHaveBeenCalledOnce();
+    resolveFirstRequest?.();
+    await firstRequest;
+    await Promise.resolve();
+    reloadAction?.();
+    await vi.waitFor(() => {
+      expect(harness.activateUpdate).toHaveBeenCalledTimes(2);
+      expect(harness.reportError).toHaveBeenCalledWith(
+        "Failed to activate the bb service worker update",
+        expect.any(Error),
+      );
+    });
+    harness.serviceWorker.dispatchControllerChange();
+
+    expect(harness.reload).toHaveBeenCalledOnce();
   });
 });
