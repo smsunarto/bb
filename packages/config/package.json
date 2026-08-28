@@ -113,6 +113,11 @@
       "types": "./src/app-surface.ts",
       "default": "./src/app-surface.ts"
     },
+    "./app-static": {
+      "source": "./src/app-static.ts",
+      "types": "./src/app-static.ts",
+      "default": "./src/app-static.ts"
+    },
     "./skill-storage-paths": {
       "source": "./src/skill-storage-paths.ts",
       "types": "./src/skill-storage-paths.ts",

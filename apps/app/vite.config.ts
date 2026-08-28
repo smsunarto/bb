@@ -4,6 +4,7 @@ import { defineConfig, type UserConfig } from "vite";
 import babel from "@rolldown/plugin-babel";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { APP_SERVICE_WORKER_FILENAME } from "@bb/config/app-static";
 import { VitePWA } from "vite-plugin-pwa";
 import { bundleStats } from "./vite-bundle-stats.js";
 import { fontPreload } from "./vite-font-preload.js";
@@ -22,6 +23,7 @@ export const sharedViteConfig = {
       includeAssets: [],
       includeManifestIcons: false,
       injectRegister: false,
+      filename: APP_SERVICE_WORKER_FILENAME,
       manifest: false,
       registerType: "prompt",
       strategies: "generateSW",

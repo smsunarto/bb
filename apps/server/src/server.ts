@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
+import { APP_SERVICE_WORKER_PATH } from "@bb/config/app-static";
 import { terminalWebSocketQuerySchema } from "@bb/server-contract";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
@@ -170,7 +171,7 @@ function staticCacheControlForPath(urlPath: string): string {
   if (urlPath.startsWith("/assets/")) {
     return STATIC_ASSET_CACHE_CONTROL;
   }
-  if (urlPath.endsWith(".html") || urlPath === "/sw.js") {
+  if (urlPath.endsWith(".html") || urlPath === APP_SERVICE_WORKER_PATH) {
     return STATIC_REVALIDATED_CACHE_CONTROL;
   }
   return STATIC_PUBLIC_FILE_CACHE_CONTROL;
@@ -264,7 +265,8 @@ export function registerStaticAppRoutes(app: Hono, staticDir: string): void {
     urlPath: string;
   }): Promise<Response> => {
     const etag =
-      args.contentType === "text/html" || args.urlPath === "/sw.js"
+      args.contentType === "text/html" ||
+      args.urlPath === APP_SERVICE_WORKER_PATH
         ? await revalidatedFileEtag(args.filePath)
         : undefined;
     if (
@@ -323,7 +325,7 @@ export function registerStaticAppRoutes(app: Hono, staticDir: string): void {
         });
       }
     } catch {}
-    if (urlPath.startsWith("/assets/") || urlPath === "/sw.js") {
+    if (urlPath.startsWith("/assets/") || urlPath === APP_SERVICE_WORKER_PATH) {
       return context.notFound();
     }
     return serveStaticAppFile({

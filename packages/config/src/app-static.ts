@@ -1,0 +1,2 @@
+export const APP_SERVICE_WORKER_FILENAME = "sw.js";
+export const APP_SERVICE_WORKER_PATH = `/${APP_SERVICE_WORKER_FILENAME}`;
