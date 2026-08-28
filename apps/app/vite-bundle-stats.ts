@@ -24,6 +24,7 @@ interface BundleRouteClosure {
 export interface BundleStats {
   entry: string;
   bootChunks: BundleBootChunk[];
+  precacheAssets: string[];
   chunks: BundleChunk[];
   routeClosures: Record<string, BundleRouteClosure>;
 }
@@ -37,8 +38,30 @@ export interface BundleStatsChunkInput {
   isEntry: boolean;
   facadeModuleId: string | null;
   imports: readonly string[];
+  importedCss: readonly string[];
   moduleIds: readonly string[];
   code: string;
+}
+
+interface BundleStatsPluginOptions {
+  onBuildStart?: () => void;
+  onStats?: (stats: BundleStats) => void;
+}
+
+export function verifyPwaPrecacheEntries<T extends { url: string }>(
+  entries: T[],
+  expectedAssets: readonly string[],
+): { manifest: T[]; warnings: string[] } {
+  const expected = new Set(expectedAssets);
+  const actual = new Set(entries.map((entry) => entry.url));
+  const missing = [...expected].filter((asset) => !actual.has(asset)).sort();
+  const unexpected = [...actual].filter((asset) => !expected.has(asset)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `PWA precache does not match the boot asset set\nMissing: ${missing.join(", ") || "none"}\nUnexpected: ${unexpected.join(", ") || "none"}`,
+    );
+  }
+  return { manifest: entries, warnings: [] };
 }
 
 export function computeBundleStats(
@@ -93,6 +116,14 @@ export function computeBundleStats(
 
   const bootFileNames = staticClosure(entry.fileName, new Set());
   const bootChunks = describeChunks(bootFileNames);
+  const precacheAssets = new Set(bootFileNames);
+  for (const fileName of bootFileNames) {
+    const chunk = byFileName.get(fileName);
+    if (chunk === undefined) continue;
+    for (const cssFileName of chunk.importedCss) {
+      precacheAssets.add(cssFileName);
+    }
+  }
 
   const allChunks: BundleChunk[] = [];
   for (const chunk of [...chunks].sort((a, b) =>
@@ -130,15 +161,19 @@ export function computeBundleStats(
   return {
     entry: entry.fileName,
     bootChunks,
+    precacheAssets: [...precacheAssets].sort(),
     chunks: allChunks,
     routeClosures,
   };
 }
 
-export function bundleStats(): Plugin {
+export function bundleStats(options: BundleStatsPluginOptions = {}): Plugin {
   return {
     name: "bb:bundle-stats",
     apply: "build",
+    buildStart() {
+      options.onBuildStart?.();
+    },
     async writeBundle(_options, bundle) {
       const chunks: BundleStatsChunkInput[] = [];
       for (const output of Object.values(bundle)) {
@@ -148,6 +183,7 @@ export function bundleStats(): Plugin {
           isEntry: output.isEntry,
           facadeModuleId: output.facadeModuleId,
           imports: output.imports,
+          importedCss: [...(output.viteMetadata?.importedCss ?? [])],
           moduleIds: output.moduleIds ?? [],
           code: output.code,
         });
@@ -158,6 +194,7 @@ export function bundleStats(): Plugin {
         (message) => this.warn(message),
       );
       if (stats === null) return;
+      options.onStats?.(stats);
       const target = resolve(appDir, "bundle-stats.json");
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, `${JSON.stringify(stats, null, 2)}\n`);

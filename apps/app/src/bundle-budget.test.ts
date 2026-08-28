@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   computeBundleStats,
   type BundleStatsChunkInput,
+  verifyPwaPrecacheEntries,
 } from "../vite-bundle-stats";
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +25,7 @@ function chunk(
     isEntry: false,
     facadeModuleId: null,
     imports: [],
+    importedCss: [],
     moduleIds: [],
     code: "x".repeat(2048),
     ...overrides,
@@ -34,8 +36,10 @@ const chunks: BundleStatsChunkInput[] = [
   chunk("assets/index.js", {
     isEntry: true,
     imports: ["assets/boot-shared.js"],
+    importedCss: ["assets/index.css"],
   }),
   chunk("assets/boot-shared.js", {
+    importedCss: ["assets/shared.css"],
     moduleIds: ["/repo/node_modules/react/index.js"],
   }),
   chunk("assets/SplitWorkspaceRoute.js", {
@@ -67,6 +71,12 @@ describe("computeBundleStats", () => {
       "assets/boot-shared.js",
       "assets/index.js",
     ]);
+    expect(stats.precacheAssets).toEqual([
+      "assets/boot-shared.js",
+      "assets/index.css",
+      "assets/index.js",
+      "assets/shared.css",
+    ]);
     const route = stats.routeClosures.SplitWorkspaceRoute;
     if (route === undefined) throw new Error("expected the route closure");
     expect(route.entry).toBe("assets/SplitWorkspaceRoute.js");
@@ -83,6 +93,35 @@ describe("computeBundleStats", () => {
     const stats = computeBundleStats(chunks, { Missing: "/nope.tsx" }, warn);
     expect(stats?.routeClosures).toEqual({});
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("verifyPwaPrecacheEntries", () => {
+  it("accepts the exact Workbox manifest", () => {
+    const entries = [
+      { revision: "a", size: 10, url: "assets/index.js" },
+      { revision: "b", size: 20, url: "assets/index.css" },
+    ];
+
+    expect(
+      verifyPwaPrecacheEntries(entries, [
+        "assets/index.css",
+        "assets/index.js",
+      ]),
+    ).toEqual({ manifest: entries, warnings: [] });
+  });
+
+  it("rejects unexpected Workbox entries of every file type", () => {
+    expect(() =>
+      verifyPwaPrecacheEntries(
+        [
+          { url: "assets/index.js" },
+          { url: "assets/icon.png" },
+          { url: "offline.html" },
+        ],
+        ["assets/index.js"],
+      ),
+    ).toThrowError("Unexpected: assets/icon.png, offline.html");
   });
 });
 

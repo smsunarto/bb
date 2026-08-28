@@ -6,11 +6,64 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { APP_SERVICE_WORKER_FILENAME } from "@bb/config/app-static";
 import { VitePWA } from "vite-plugin-pwa";
-import { bundleStats } from "./vite-bundle-stats.js";
+import { bundleStats, verifyPwaPrecacheEntries } from "./vite-bundle-stats.js";
 import { fontPreload } from "./vite-font-preload.js";
 import { sharedUiEnvSeam } from "./vite-shared-ui-seam.js";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
+
+function pwaBuildPlugins() {
+  let precacheAssets: string[] | undefined;
+  return [
+    bundleStats({
+      onBuildStart: () => {
+        precacheAssets = undefined;
+      },
+      onStats: (stats) => {
+        precacheAssets = stats.precacheAssets;
+      },
+    }),
+    VitePWA({
+      devOptions: { enabled: false },
+      includeAssets: [],
+      includeManifestIcons: false,
+      injectRegister: false,
+      filename: APP_SERVICE_WORKER_FILENAME,
+      integration: {
+        beforeBuildServiceWorker: (options) => {
+          const buildPrecacheAssets = precacheAssets;
+          if (
+            buildPrecacheAssets === undefined ||
+            buildPrecacheAssets.length === 0
+          ) {
+            throw new Error(
+              "bb:pwa: bundleStats did not capture boot assets before service-worker generation",
+            );
+          }
+          options.workbox.globPatterns = buildPrecacheAssets;
+          options.workbox.manifestTransforms = [
+            (entries) => verifyPwaPrecacheEntries(entries, buildPrecacheAssets),
+          ];
+        },
+        closeBundleOrder: "post",
+        configureOptions: (viteOptions, options) => {
+          options.disable = viteOptions.build.write === false;
+        },
+      },
+      manifest: false,
+      registerType: "prompt",
+      strategies: "generateSW",
+      workbox: {
+        clientsClaim: true,
+        globPatterns: [],
+        inlineWorkboxRuntime: true,
+        navigateFallback: null,
+        runtimeCaching: [],
+        skipWaiting: false,
+      },
+    }),
+  ];
+}
 
 export const sharedViteConfig = {
   plugins: [
@@ -18,25 +71,7 @@ export const sharedViteConfig = {
     react(),
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
-    VitePWA({
-      devOptions: { enabled: false },
-      includeAssets: [],
-      includeManifestIcons: false,
-      injectRegister: false,
-      filename: APP_SERVICE_WORKER_FILENAME,
-      manifest: false,
-      registerType: "prompt",
-      strategies: "generateSW",
-      workbox: {
-        clientsClaim: true,
-        globPatterns: ["assets/**"],
-        inlineWorkboxRuntime: true,
-        navigateFallback: null,
-        runtimeCaching: [],
-        skipWaiting: false,
-      },
-    }),
-    bundleStats(),
+    ...pwaBuildPlugins(),
     fontPreload(),
   ],
   cacheDir: "node_modules/.vite/app",

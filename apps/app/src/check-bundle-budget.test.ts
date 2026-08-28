@@ -40,6 +40,7 @@ function buildStats({
   return {
     entry: index.fileName,
     bootChunks: [index],
+    precacheAssets: [index.fileName],
     chunks: [
       index,
       chunk("route.js", {
