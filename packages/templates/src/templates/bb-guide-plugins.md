@@ -95,6 +95,20 @@ Authentication failures and temporary upstream failures can fail over to
 another eligible account before a response reaches the client. The hub never
 replays a response after it starts streaming to the client.
 
+Conversation affinity keeps requests on the same eligible account, scoped by
+provider and host. Claude uses the session ID in JSON or legacy
+`metadata.user_id`. Codex uses its native `session-id` header, then the existing
+`session_id` form, then the body `prompt_cache_key`. Session IDs and cache keys
+have separate namespaces. Requests without a usable identifier follow the
+priority, in-flight count, and weekly-reset order.
+
+The hub rebinds a conversation when its account becomes ineligible. It keeps
+up to 4,096 bindings in memory, expires them after 30 minutes of inactivity,
+and resets them on restart. Codex's native `session-id` and `thread-id` headers,
+cache fields, and Responses-based compaction payloads pass through, including
+encrypted items. Affinity avoids unnecessary account switches but does not
+guarantee an upstream prompt-cache hit.
+
 The builtin Keep Awake plugin prevents macOS idle sleep while bb is running.
 Its settings page lets you target all hosts or selected hosts. The CLI
 equivalents are:

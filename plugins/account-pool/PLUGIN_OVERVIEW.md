@@ -3,7 +3,7 @@ Keep a Claude Code or Codex thread running when one account hits its limit. The 
 ## What you get
 
 - A pool of Claude and Codex accounts, added by importing the login already on the machine, signing in through the browser, or pasting an Anthropic API key.
-- Per-request selection that follows your priority order, then the account with the fewest requests in flight, then the account whose weekly window resets first.
+- New conversations follow your priority order, then the account with the fewest requests in flight, then the account whose weekly window resets first. A conversation stays on its account while that account remains eligible.
 - Live limit windows per account and model family in the plugin's settings page, and the same numbers from `bb pool status`.
 - A routing switch per provider and a bypass per thread, so one thread can go straight to its own credentials.
 
@@ -14,6 +14,8 @@ The hub runs inside BB and serves an Anthropic Messages endpoint and an OpenAI R
 Concurrent requests share one OAuth refresh per account. During a temporary refresh outage, the hub can continue with an access token whose expiry is known and still in the future. It waits before another refresh attempt. If that token has expired and no other account can serve the request, the hub returns a temporary error and retries refresh on a later request. Rejected refresh credentials remain an account error.
 
 If an OAuth request receives HTTP 401, the hub refreshes its credential once and retries. It reuses a token already refreshed by another request. Authentication failures and temporary upstream failures can move the request to another eligible account before a response reaches the client. Once a response starts, the hub does not replay it on another account.
+
+Conversation affinity uses Claude's session metadata or Codex's session header, with its prompt cache key as a fallback. Bindings are separate for each provider and host. The hub chooses another account when the bound account becomes ineligible. Bindings expire after 30 minutes without a request and reset when the hub restarts. Requests without a usable identifier follow ordinary account selection.
 
 ## Requirements
 
