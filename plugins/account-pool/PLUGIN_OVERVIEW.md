@@ -13,6 +13,8 @@ The hub runs inside BB and serves an Anthropic Messages endpoint and an OpenAI R
 
 Concurrent requests share one OAuth refresh per account. During a temporary refresh outage, the hub can continue with an access token whose expiry is known and still in the future. It waits before another refresh attempt. If that token has expired and no other account can serve the request, the hub returns a temporary error and retries refresh on a later request. Rejected refresh credentials remain an account error.
 
+If an OAuth request receives HTTP 401, the hub refreshes its credential once and retries. It reuses a token already refreshed by another request. Authentication failures and temporary upstream failures can move the request to another eligible account before a response reaches the client. Once a response starts, the hub does not replay it on another account.
+
 ## Requirements
 
 Accounts you own and are permitted to use this way.

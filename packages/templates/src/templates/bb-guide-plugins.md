@@ -89,6 +89,12 @@ attempt. If the token has expired and no other account can serve the request,
 the hub returns HTTP 503. Refresh resumes automatically after the delay.
 Rejected refresh credentials remain an account error.
 
+An OAuth HTTP 401 triggers one credential refresh and retry per account. A
+concurrent request that already refreshed the token supplies the replacement.
+Authentication failures and temporary upstream failures can fail over to
+another eligible account before a response reaches the client. The hub never
+replays a response after it starts streaming to the client.
+
 The builtin Keep Awake plugin prevents macOS idle sleep while bb is running.
 Its settings page lets you target all hosts or selected hosts. The CLI
 equivalents are:
