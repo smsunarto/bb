@@ -83,6 +83,12 @@ URLs. Use `bb pool config set <key> <value>` to change one; the two URL values
 are QA-only overrides. Upgrading from a build that stored these values through
 plugin settings resets the threshold and QA overrides to their defaults.
 
+Concurrent requests share one OAuth refresh per account. A temporary refresh
+failure leaves a known-unexpired access token usable and delays the next refresh
+attempt. If the token has expired and no other account can serve the request,
+the hub returns HTTP 503. Refresh resumes automatically after the delay.
+Rejected refresh credentials remain an account error.
+
 The builtin Keep Awake plugin prevents macOS idle sleep while bb is running.
 Its settings page lets you target all hosts or selected hosts. The CLI
 equivalents are:

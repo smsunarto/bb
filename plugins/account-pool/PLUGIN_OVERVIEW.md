@@ -11,6 +11,8 @@ Keep a Claude Code or Codex thread running when one account hits its limit. The 
 
 The hub runs inside BB and serves an Anthropic Messages endpoint and an OpenAI Responses endpoint. With routing on, BB hands the Claude Code or Codex process a base URL that points at the hub and a token scoped to that machine, and the provider reports **Proxied** in its health row. An account is skipped for a request when it is at or above the switch threshold, on hold, or in error. The threshold defaults to 98 percent of a window. Account secrets stay in the BB data directory on the server machine, and the hub refreshes them in the background.
 
+Concurrent requests share one OAuth refresh per account. During a temporary refresh outage, the hub can continue with an access token whose expiry is known and still in the future. It waits before another refresh attempt. If that token has expired and no other account can serve the request, the hub returns a temporary error and retries refresh on a later request. Rejected refresh credentials remain an account error.
+
 ## Requirements
 
 Accounts you own and are permitted to use this way.
